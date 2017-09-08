@@ -9,8 +9,10 @@ import "math/rand"
 import "net/http"
 import "os"
 import "strconv"
+import "strings"
 import "time"
 
+//import "github.com/davecgh/go-spew/spew"
 import "github.com/kardianos/osext"
 
 type sonarrMissingEpisodes struct {
@@ -133,25 +135,48 @@ type sonarrEpisode struct {
 	ID int `json:"id"`
 }
 
-type sonarrSearchEpisodeCommand struct {
-	Name       string
-	EpisodeIds []int `json:"episodeIds"`
+type sonarrSearchResult struct {
+	Name string `json:"name"`
+	Body struct {
+		EpisodeIds          []int  `json:"episodeIds"`
+		SendUpdatesToClient bool   `json:"sendUpdatesToClient"`
+		UpdateScheduledTask bool   `json:"updateScheduledTask"`
+		CompletionMessage   string `json:"completionMessage"`
+		Name                string `json:"name"`
+		Trigger             string `json:"trigger"`
+	} `json:"body"`
+	Priority            string    `json:"priority"`
+	Status              string    `json:"status"`
+	Queued              time.Time `json:"queued"`
+	Trigger             string    `json:"trigger"`
+	State               string    `json:"state"`
+	Manual              bool      `json:"manual"`
+	StartedOn           time.Time `json:"startedOn"`
+	SendUpdatesToClient bool      `json:"sendUpdatesToClient"`
+	UpdateScheduledTask bool      `json:"updateScheduledTask"`
+	ID                  int       `json:"id"`
 }
 
-type Configuration struct {
+type sonarrSearchEpisodeCommand struct {
+	Name       string `json:"name"`
+	EpisodeIds []int  `json:"episodeIds"`
+}
+
+type configuration struct {
 	LogLocation string `json:"loglocation"`
 	HostName    string `json:"hostname"`
+	BaseURL     string `json:"baseurl"`
 	HostPort    int    `json:"port"`
-	ApiKey      string `json:"apikey"`
+	APIKey      string `json:"apikey"`
 }
 
-var cfg Configuration
+var cfg configuration
 
 func main() {
 	cfgpath, _ := osext.ExecutableFolder()
 	file, _ := os.Open(cfgpath + "/sre.json")
 	decoder := json.NewDecoder(file)
-	cfg = Configuration{}
+	cfg = configuration{}
 	err := decoder.Decode(&cfg)
 	if err != nil {
 		fmt.Println("error:", err)
@@ -163,14 +188,23 @@ func main() {
 	if cfg.HostPort == 0 {
 		cfg.HostPort = 8989
 	}
-
-	if cfg.ApiKey == "" {
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = ""
+	}
+	if cfg.APIKey == "" {
 		writeToLog("ERROR: Invalid ApiKey")
 		return
 	}
 
-	urlRoot := cfg.HostName + ":" + strconv.Itoa(cfg.HostPort) + "/api"
-	apiKey := cfg.ApiKey
+	urlRoot := cfg.HostName + ":" + strconv.Itoa(cfg.HostPort)
+	if cfg.BaseURL != "" {
+		if strings.Index(cfg.BaseURL, "/") == -1 {
+			urlRoot += "/"
+		}
+		urlRoot += cfg.BaseURL
+	}
+	urlRoot += "/api"
+	apiKey := cfg.APIKey
 
 	randomEpisode := getRandomSonarrEpisode(urlRoot, apiKey)
 	writeToLog(fmt.Sprintf("Random Episode ID: %d", randomEpisode))
@@ -179,38 +213,35 @@ func main() {
 	episode := getSonarrEpisodeInfo(urlRoot, apiKey, randomEpisode)
 	writeToLog(fmt.Sprintf("Searching: %s - S%dE%d - %s", episode.Series.Title, episode.SeasonNumber, episode.EpisodeNumber, episode.Title))
 
-	// Send Search Command
-	params := &sonarrSearchEpisodeCommand{Name: "EpisodeSearch", EpisodeIds: []int{randomEpisode}}
-	b, err := json.Marshal(params)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	writeToLog(string(b))
+	episodesURL := fmt.Sprintf("%s/command/?apikey=%s", urlRoot, apiKey)
+	writeToLog(episodesURL)
 
-	jsonStr := []byte(b)
+	b := new(bytes.Buffer)
+	json.NewEncoder(b).Encode(struct {
+		Name       string
+		EpisodeIds []int
+	}{
+		"EpisodeSearch",
+		[]int{randomEpisode},
+	})
 
-	episodesUrl := urlRoot + "/command"
+	writeToLog(b.String())
 
-	req, err := http.NewRequest("POST", episodesUrl, bytes.NewBuffer(jsonStr))
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("X-API-KEY", apiKey)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := http.Post(episodesURL, "application/json", b)
 	if err != nil {
 		panic(err)
 	}
-
 	writeToLog(fmt.Sprintf("Resp Status: %s", resp.Status))
 
 	defer resp.Body.Close()
-	contents, err := ioutil.ReadAll(resp.Body)
+	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		writeToLog(fmt.Sprintf("%s", err.Error()))
 		os.Exit(1)
 	}
-	writeToLog(string(contents))
+	writeToLog("Response:\n")
+	writeToLog(string(body))
+	writeToLog("\n___________________________\n")
 }
 
 func getSonarrTotalRecords(urlRoot, apiKey string) int {
