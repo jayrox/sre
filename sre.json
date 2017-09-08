@@ -1,5 +1,7 @@
 {
     "hostname": "http://localhost",
     "port": 8989,
-    "apikey": ""
+    "baseurl": "",
+    "apikey": "",
+    "loglocation": "/path/to/log/folder"
 }
