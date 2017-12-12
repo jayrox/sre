@@ -213,24 +213,29 @@ func main() {
 	episode := getSonarrEpisodeInfo(urlRoot, apiKey, randomEpisode)
 	writeToLog(fmt.Sprintf("Searching: %s - S%dE%d - %s", episode.Series.Title, episode.SeasonNumber, episode.EpisodeNumber, episode.Title))
 
-	episodesURL := fmt.Sprintf("%s/command/?apikey=%s", urlRoot, apiKey)
+	episodesURL := fmt.Sprintf("%s/command", urlRoot)
 	writeToLog(episodesURL)
 
 	b := new(bytes.Buffer)
 	json.NewEncoder(b).Encode(struct {
-		Name       string
+		Name       string `json:"name"`
 		EpisodeIds []int
 	}{
-		"EpisodeSearch",
+		"episodeSearch",
 		[]int{randomEpisode},
 	})
 
 	writeToLog(b.String())
 
-	resp, err := http.Post(episodesURL, "application/json", b)
+	client := &http.Client{}
+	req, err := http.NewRequest("POST", episodesURL, b)
+	req.Header.Add("X-Api-Key", apiKey)
+	resp, err := client.Do(req)
 	if err != nil {
 		panic(err)
 	}
+	defer resp.Body.Close()
+
 	writeToLog(fmt.Sprintf("Resp Status: %s", resp.Status))
 
 	defer resp.Body.Close()
