@@ -2,6 +2,7 @@ package main
 
 import "bytes"
 import "encoding/json"
+import "flag"
 import "fmt"
 import "io/ioutil"
 import "log"
@@ -170,9 +171,14 @@ type configuration struct {
 	APIKey      string `json:"apikey"`
 }
 
-var cfg configuration
+var (
+	flagIndex = flag.Int("i", -1, "index to search for. (if used, skips the random index and uses defined)")
+	cfg       configuration
+)
 
 func main() {
+	flag.Parse()
+
 	cfgpath, _ := osext.ExecutableFolder()
 	file, _ := os.Open(cfgpath + "/sre.json")
 	decoder := json.NewDecoder(file)
@@ -208,10 +214,12 @@ func main() {
 
 	randomEpisode := getRandomSonarrEpisode(urlRoot, apiKey)
 	writeToLog(fmt.Sprintf("Random Episode ID: %d", randomEpisode))
+	fmt.Printf("Random Episode ID: %d\n", randomEpisode)
 
 	// Get Episode info
 	episode := getSonarrEpisodeInfo(urlRoot, apiKey, randomEpisode)
 	writeToLog(fmt.Sprintf("Searching: %s - S%dE%d - %s", episode.Series.Title, episode.SeasonNumber, episode.EpisodeNumber, episode.Title))
+	fmt.Printf("Searching: %s - S%dE%d - %s", episode.Series.Title, episode.SeasonNumber, episode.EpisodeNumber, episode.Title)
 
 	episodesURL := fmt.Sprintf("%s/command", urlRoot)
 	writeToLog(episodesURL)
@@ -276,8 +284,12 @@ func getSonarrTotalRecords(urlRoot, apiKey string) int {
 func getRandomSonarrEpisode(urlRoot, apiKey string) int {
 	records := getSonarrTotalRecords(urlRoot, apiKey)
 
-	rand.Seed(time.Now().Unix())
-	page := rand.Intn(records-1) + 1
+	page := flagInt(flagIndex)
+
+	if flagInt(flagIndex) == -1 {
+		rand.Seed(time.Now().Unix())
+		page = rand.Intn(records-1) + 1
+	}
 
 	writeToLog(fmt.Sprintf("Rand Record: %d", page))
 	pageSize := 1
@@ -320,6 +332,10 @@ func getSonarrEpisodeInfo(urlRoot, apiKey string, episodeId int) (episode sonarr
 	json.Unmarshal(body, &data)
 
 	return data
+}
+
+func flagInt(fs *int) int {
+	return *fs
 }
 
 func writeToLog(str string) {
